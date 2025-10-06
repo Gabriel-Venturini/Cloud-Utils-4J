@@ -270,15 +270,16 @@ public class AwsSdkStorageOperations implements StorageOperations {
         }
     }
 
-    // TODO: create the unit tests for this function
     @Override
     public void deleteBucket(String bucketName) throws StorageException {
+        S3BucketValidator.validate(bucketName);
+
         try {
             s3.deleteBucket(DeleteBucketRequest.builder().bucket(bucketName).build());
-        } catch (NoSuchBucketException e) {
-            throw new BucketDoesNotExistsException("Bucket not found: " + bucketName);
         } catch (S3Exception e) {
-            throw new StorageException("Failed to delete bucket (it may not be empty): " + e.getMessage(), e);
+            S3ExceptionHandler.handle(e, "delete bucket", bucketName);
+        } catch (Exception e) {
+            S3ExceptionHandler.handleUnknownError(e, "delete bucket");
         }
     }
 }
