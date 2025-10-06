@@ -197,9 +197,8 @@ public class AwsSdkStorageOperations implements StorageOperations {
         }
     }
 
-    // TODO: create the unit tests for this function
     @Override
-    public void moveFile(String sourceBucket, String sourceKey, String destBucket, String destKey) throws ObjectNotFoundException, StorageException {
+    public void moveFile(String sourceBucket, String sourceKey, String destBucket, String destKey) throws StorageException {
         copyFile(sourceBucket, sourceKey, destBucket, destKey);
         deleteFile(sourceBucket, sourceKey);
     }
