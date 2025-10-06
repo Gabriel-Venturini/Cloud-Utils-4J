@@ -257,15 +257,16 @@ public class AwsSdkStorageOperations implements StorageOperations {
         return false;
     }
 
-    // TODO: create the unit tests for this function
     @Override
     public void createBucket(String bucketName) throws StorageException {
+        S3BucketValidator.validate(bucketName);
+
         try {
             s3.createBucket(CreateBucketRequest.builder().bucket(bucketName).build());
-        } catch (BucketAlreadyOwnedByYouException | BucketAlreadyExistsException e) {
-            throw new StorageException("Bucket already exists: " + bucketName, e);
         } catch (S3Exception e) {
-            throw new StorageException("Failed to create bucket: " + e.getMessage(), e);
+            S3ExceptionHandler.handle(e, "create bucket", bucketName);
+        } catch (Exception e) {
+            S3ExceptionHandler.handleUnknownError(e, "create bucket");
         }
     }
 

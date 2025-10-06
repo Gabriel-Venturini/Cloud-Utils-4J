@@ -37,7 +37,7 @@ public final class S3ExceptionHandler {
         } else if (e instanceof NoSuchKeyException) {
             throw new FileDoesNotExistsException("Object not found during " + operationName + ": " + resourceName);
         } else if (e instanceof BucketAlreadyOwnedByYouException || e instanceof BucketAlreadyExistsException) {
-            throw new StorageException("Bucket already exists: " + resourceName, e);
+            throw new cloudutils4j.exceptions.s3.conflict.bucket.BucketAlreadyExistsException("Bucket already exists: " + resourceName);
         } else {
             throw new StorageException(message + " S3Exception: " + e.getMessage(), e);
         }
