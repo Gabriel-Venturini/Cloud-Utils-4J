@@ -1,5 +1,6 @@
 package cloudutils4j.s3.utils;
 
+import cloudutils4j.exceptions.s3.notfound.files.FileDoesNotExistsException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -34,7 +35,7 @@ public final class S3ExceptionHandler {
         if (e instanceof NoSuchBucketException) {
             throw new BucketDoesNotExistsException("Bucket not found during " + operationName + ": " + resourceName);
         } else if (e instanceof NoSuchKeyException) {
-            throw new ObjectNotFoundException("Object not found during " + operationName + ": " + resourceName);
+            throw new FileDoesNotExistsException("Object not found during " + operationName + ": " + resourceName);
         } else if (e instanceof BucketAlreadyOwnedByYouException || e instanceof BucketAlreadyExistsException) {
             throw new StorageException("Bucket already exists: " + resourceName, e);
         } else {
