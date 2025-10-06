@@ -8,6 +8,7 @@ import cloudutils4j.exceptions.s3.invalid.localpath.EmptyDestinationLocalPathExc
 import cloudutils4j.exceptions.s3.invalid.localpath.NullDestinationLocalPathException;
 import cloudutils4j.exceptions.s3.invalid.localpath.NullLocalPathException;
 import cloudutils4j.exceptions.s3.invalid.prefix.NullPrefixException;
+import cloudutils4j.exceptions.s3.notempty.bucket.BucketIsNotEmptyException;
 import cloudutils4j.exceptions.s3.notfound.bucket.BucketDoesNotExistsException;
 import cloudutils4j.exceptions.s3.io.StorageException;
 import cloudutils4j.exceptions.s3.notfound.files.FileDoesNotExistsException;
@@ -25,6 +26,7 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.http.AbortableInputStream;
@@ -1540,6 +1542,107 @@ public class AwsSdkStorageOperationsTest {
             });
 
             verify(mockS3Client).createBucket(any(CreateBucketRequest.class));
+        }
+    }
+
+    @Nested
+    class deleteBucketTest {
+        @Test
+        @DisplayName("should delete bucket successfully when it exists and is empty")
+        public void deleteBucket_ShouldDeleteSuccessfully_WhenBucketExistsAndIsEmpty() throws Exception {
+            String bucketName = "bucket-to-delete";
+
+            assertDoesNotThrow(() -> {
+                storageOperations.deleteBucket(bucketName);
+            });
+
+            ArgumentCaptor<DeleteBucketRequest> captor = ArgumentCaptor.forClass(DeleteBucketRequest.class);
+            verify(mockS3Client).deleteBucket(captor.capture());
+            assertEquals(bucketName, captor.getValue().bucket());
+        }
+
+        @Test
+        @DisplayName("should throw BucketDoesNotExistsException when bucket does not exist")
+        public void deleteBucket_ShouldThrowBucketDoesNotExistsException_WhenBucketDoesNotExist() throws Exception {
+            String bucketName = "non-existent-bucket";
+            when(mockS3Client.deleteBucket(any(DeleteBucketRequest.class)))
+                    .thenThrow(NoSuchBucketException.class);
+
+            assertThrows(BucketDoesNotExistsException.class, () -> {
+                storageOperations.deleteBucket(bucketName);
+            });
+        }
+
+        @Test
+        @DisplayName("deleteBucket should throw StorageException when bucket is not empty")
+        public void deleteBucket_ShouldThrowBucketIsNotEmptyException_WhenBucketIsNotEmpty() throws Exception {
+            String bucketName = "not-empty-bucket";
+
+            AwsErrorDetails errorDetails = AwsErrorDetails.builder()
+                    .errorCode("BucketNotEmpty")
+                    .errorMessage("The bucket you tried to delete is not empty.")
+                    .build();
+
+            S3Exception notEmptyException = (S3Exception) S3Exception.builder()
+                    .statusCode(409)
+                    .awsErrorDetails(errorDetails)
+                    .build();
+
+            when(mockS3Client.deleteBucket(any(DeleteBucketRequest.class)))
+                    .thenThrow(notEmptyException);
+
+            assertThrows(BucketIsNotEmptyException.class, () -> {
+                storageOperations.deleteBucket(bucketName);
+            });
+
+            verify(mockS3Client).deleteBucket(any(DeleteBucketRequest.class));
+        }
+
+        @Test
+        @DisplayName("deleteBucket should throw NullBucketNameException when bucket name is null")
+        public void deleteBucket_ShouldThrowNullBucketNameException_WhenBucketNameIsNull() throws Exception {
+            assertThrows(NullBucketNameException.class, () -> {
+                storageOperations.deleteBucket(null);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("deleteBucket should throw EmptyBucketNameException when bucket name is empty")
+        public void deleteBucket_ShouldThrowEmptyBucketNameException_WhenBucketNameIsEmpty() throws Exception {
+            assertThrows(EmptyBucketNameException.class, () -> {
+                storageOperations.deleteBucket("");
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("deleteBucket should throw InvalidBucketNameException when bucket name is invalid")
+        public void deleteBucket_ShouldThrowInvalidBucketNameException_WhenBucketNameIsInvalid() throws Exception {
+            assertThrows(InvalidBucketNameException.class, () -> {
+                storageOperations.deleteBucket("Invalid_BucketName");
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("deleteBucket should throw StorageException when unknown error")
+        public void deleteBucket_ShouldThrowStorageException_WhenUnknownError() throws Exception {
+            String bucketName = "bucket-name";
+
+            RuntimeException unknownError = new RuntimeException("Unknown connection error");
+
+            when(mockS3Client.deleteBucket(any(DeleteBucketRequest.class)))
+                    .thenThrow(unknownError);
+
+            assertThrows(StorageException.class, () -> {
+                storageOperations.deleteBucket(bucketName);
+            });
+
+            verify(mockS3Client).deleteBucket(any(DeleteBucketRequest.class));
         }
     }
 }
