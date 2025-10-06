@@ -5,7 +5,7 @@
 
     <groupId>org.cloudutils4j</groupId>
     <artifactId>CloudUtils4J</artifactId>
-    <version>0.4-Alpha</version>
+    <version>1.0.0-Stable</version>
 
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
