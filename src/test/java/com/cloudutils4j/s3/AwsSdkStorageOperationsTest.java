@@ -59,6 +59,8 @@ public class AwsSdkStorageOperationsTest {
         storageOperations = new AwsSdkStorageOperations(mockS3Client);
     }
 
+    // --- File Operations ---
+
     @Nested
     class ListFilesTest {
         @Test
@@ -1322,6 +1324,59 @@ public class AwsSdkStorageOperationsTest {
             });
 
             verify(mockS3Client).headObject(any(HeadObjectRequest.class));
+        }
+    }
+
+    // --- Bucket Operations ---
+
+    @Nested
+    class listBucketsTest {
+        @Test
+        @DisplayName("should return a list of bucket names when buckets exist")
+        public void listBuckets_ShouldReturnListOfBucketNames_WhenBucketsExist() throws Exception {
+            Bucket bucket1 = Bucket.builder().name("my-first-bucket").build();
+            Bucket bucket2 = Bucket.builder().name("my-second-bucket").build();
+
+            ListBucketsResponse fakeResponse = ListBucketsResponse.builder()
+                    .buckets(bucket1, bucket2)
+                    .build();
+
+            when(mockS3Client.listBuckets()).thenReturn(fakeResponse);
+
+            List<String> result = storageOperations.listBuckets();
+
+            assertNotNull(result);
+            assertEquals(2, result.size());
+            assertTrue(result.contains("my-first-bucket"));
+            assertTrue(result.contains("my-second-bucket"));
+        }
+
+        @Test
+        @DisplayName("should return an empty list when no buckets exist")
+        public void listBuckets_ShouldReturnEmptyList_WhenNoBucketsExist() throws StorageException {
+            ListBucketsResponse fakeEmptyResponse = ListBucketsResponse.builder()
+                    .buckets(Collections.emptyList())
+                    .build();
+
+            when(mockS3Client.listBuckets()).thenReturn(fakeEmptyResponse);
+
+            List<String> result = storageOperations.listBuckets();
+
+            assertNotNull(result);
+            assertTrue(result.isEmpty());
+        }
+
+        @Test
+        @DisplayName("should throw StorageException when S3 client fails")
+        public void listBuckets_ShouldThrowStorageException_WhenS3ClientFails() {
+            when(mockS3Client.listBuckets())
+                    .thenThrow(S3Exception.builder().message("Access Denied").build());
+
+            assertThrows(StorageException.class, () -> {
+                storageOperations.listBuckets();
+            });
+
+            verify(mockS3Client).listBuckets();
         }
     }
 }
