@@ -21,6 +21,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -1105,6 +1106,74 @@ public class AwsSdkStorageOperationsTest {
             });
 
             verify(mockS3Client).copyObject(any(CopyObjectRequest.class));
+        }
+    }
+
+    @Nested
+    class moveFileTest {
+        @Test
+        @DisplayName("should call copy and then delete on successful move")
+        public void moveFile_ShouldCallCopyThenDelete_WhenSuccessful() throws Exception {
+            String sourceBucket = "source-bucket";
+            String sourceKey = "path/source.txt";
+            String destBucket = "dest-bucket";
+            String destKey = "path/dest.txt";
+
+            storageOperations.moveFile(sourceBucket, sourceKey, destBucket, destKey);
+
+            InOrder inOrder = inOrder(mockS3Client);
+            ArgumentCaptor<CopyObjectRequest> copyCaptor = ArgumentCaptor.forClass(CopyObjectRequest.class);
+            ArgumentCaptor<DeleteObjectRequest> deleteCaptor = ArgumentCaptor.forClass(DeleteObjectRequest.class);
+
+            inOrder.verify(mockS3Client).copyObject(copyCaptor.capture());
+            inOrder.verify(mockS3Client).deleteObject(deleteCaptor.capture());
+
+            CopyObjectRequest capturedCopyRequest = copyCaptor.getValue();
+            assertEquals(sourceBucket, capturedCopyRequest.sourceBucket());
+            assertEquals(sourceKey, capturedCopyRequest.sourceKey());
+            assertEquals(destBucket, capturedCopyRequest.destinationBucket());
+            assertEquals(destKey, capturedCopyRequest.destinationKey());
+
+            DeleteObjectRequest capturedDeleteRequest = deleteCaptor.getValue();
+            assertEquals(sourceBucket, capturedDeleteRequest.bucket());
+            assertEquals(sourceKey, capturedDeleteRequest.key());
+        }
+
+        @Test
+        @DisplayName("should not call delete if the copy operation fails")
+        public void moveFile_ShouldNotCallDelete_WhenCopyFails() throws Exception {
+            String sourceBucket = "source-bucket";
+            String sourceKey = "non-existent.txt";
+            String destBucket = "dest-bucket";
+            String destKey = "path/dest.txt";
+
+            when(mockS3Client.copyObject(any(CopyObjectRequest.class)))
+                    .thenThrow(NoSuchKeyException.builder().message("The specified key does not exist").build());
+
+            assertThrows(FileDoesNotExistsException.class, () -> {
+                storageOperations.moveFile(sourceBucket, sourceKey, destBucket, destKey);
+            });
+
+            verify(mockS3Client, never()).deleteObject(any(DeleteObjectRequest.class));
+        }
+
+        @Test
+        @DisplayName("should propagate exception when delete fails after a successful copy")
+        public void moveFile_ShouldPropagateException_WhenDeleteFails() throws Exception {
+            String sourceBucket = "source-bucket";
+            String sourceKey = "source.txt";
+            String destBucket = "dest-bucket";
+            String destKey = "path/dest.txt";
+
+            when(mockS3Client.deleteObject(any(DeleteObjectRequest.class)))
+                    .thenThrow(S3Exception.builder().message("Access Denied").build());
+
+            assertThrows(StorageException.class, () -> {
+                storageOperations.moveFile(sourceBucket, sourceKey, destBucket, destKey);
+            });
+
+            verify(mockS3Client).copyObject(any(CopyObjectRequest.class));
+            verify(mockS3Client).deleteObject(any(DeleteObjectRequest.class));
         }
     }
 }
