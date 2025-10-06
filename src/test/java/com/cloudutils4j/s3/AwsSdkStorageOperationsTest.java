@@ -1460,4 +1460,86 @@ public class AwsSdkStorageOperationsTest {
             verify(mockS3Client).headBucket(any(HeadBucketRequest.class));
         }
     }
+
+    @Nested
+    class createBucketTest {
+        @Test
+        @DisplayName("createBucket should successfully create a bucket if it does not exists")
+        public void createBucket_ShouldSuccessfullyCreateABucket_IfItDoesNotExists() throws Exception {
+            String bucketName = "new-bucket";
+
+            assertDoesNotThrow(() -> {
+                storageOperations.createBucket(bucketName);
+            });
+
+            ArgumentCaptor<CreateBucketRequest> captor = ArgumentCaptor.forClass(CreateBucketRequest.class);
+            verify(mockS3Client).createBucket(captor.capture());
+
+            assertEquals(bucketName, captor.getValue().bucket(), "The bucket name provided was incorrect.");
+        }
+
+        @Test
+        @DisplayName("createBucket should throw BucketAlreadyExistsException when bucket already exists")
+        public void createBucket_ShouldThrowBucketAlreadyExistsException_WhenBucketAlreadyExists() throws Exception {
+            String bucketName = "already-exists";
+
+            when(mockS3Client.createBucket(any(CreateBucketRequest.class)))
+                    .thenThrow(BucketAlreadyExistsException.class);
+
+            assertThrows(cloudutils4j.exceptions.s3.conflict.bucket.BucketAlreadyExistsException.class, () -> {
+                storageOperations.createBucket(bucketName);
+            });
+
+            verify(mockS3Client).createBucket(any(CreateBucketRequest.class));
+        }
+
+        @Test
+        @DisplayName("createBucket should throw InvalidBucketNameException when bucket name is invalid")
+        public void createBucket_ShouldThrowInvalidBucketNameException_WhenBucketNameIsInvalid() throws Exception {
+            String bucketName = "Invalid_BucketName";
+
+            assertThrows(InvalidBucketNameException.class, () -> {
+                storageOperations.createBucket(bucketName);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("createBucket should throw EmptyBucketNameException when bucket name is empty")
+        public void createBucket_ShouldThrowEmptyBucketNameException_WhenBucketNameIsEmpty() throws Exception {
+            assertThrows(EmptyBucketNameException.class, () -> {
+               storageOperations.bucketExists("");
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("createBucket should throw NullBucketNameException when bucket name is null")
+        public void createBucket_ShouldThrowNullBucketNameException_WhenBucketNameIsNull() throws Exception {
+            assertThrows(NullBucketNameException.class, () -> {
+                storageOperations.bucketExists(null);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("createBucket should throw StorageException when unknown error")
+        public void createBucket_ShouldThrowStorageException_WhenUnknownError() throws Exception {
+            String bucketName = "my-bucket";
+
+            RuntimeException unknownError = new RuntimeException("Unknown connection error");
+
+            when(mockS3Client.createBucket(any(CreateBucketRequest.class)))
+                    .thenThrow(unknownError);
+
+            assertThrows(StorageException.class, () -> {
+                storageOperations.createBucket(bucketName);
+            });
+
+            verify(mockS3Client).createBucket(any(CreateBucketRequest.class));
+        }
+    }
 }
