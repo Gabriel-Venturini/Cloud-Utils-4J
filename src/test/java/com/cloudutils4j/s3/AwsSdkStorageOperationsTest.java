@@ -742,4 +742,123 @@ public class AwsSdkStorageOperationsTest {
             verify(mockS3Client).getObject(any(GetObjectRequest.class), any(ResponseTransformer.class));
         }
     }
+
+    @Nested
+    class deleteFileTest {
+        @Test
+        @DisplayName("deleteFile should delete successfully when file exists")
+        public void deleteFile_ShouldDeleteSuccessfully_WhenFileExists(@TempDir File tempDir) throws Exception {
+            String bucketName = "my-bucket";
+            String key = "s3/path/to/file.txt";
+
+            storageOperations.deleteFile(bucketName, key);
+
+            ArgumentCaptor<DeleteObjectRequest> captor = ArgumentCaptor.forClass(DeleteObjectRequest.class);
+
+            verify(mockS3Client).deleteObject(captor.capture());
+
+            DeleteObjectRequest capturedRequest = captor.getValue();
+
+            assertAll(
+                    () -> assertEquals(bucketName, capturedRequest.bucket(), "The bucket name provided on the request is incorrect."),
+                    () -> assertEquals(key, capturedRequest.key(), "The key provided on the request is incorrect.")
+            );
+        }
+
+        @Test
+        @DisplayName("deleteFile should throw EmptyBucketNameException when bucket name is empty")
+        public void deleteFile_ShouldThrowEmptyBucketNameException_WhenBucketNameIsEmpty() throws Exception {
+            String key = "path/to/file.txt";
+
+            assertThrows(EmptyBucketNameException.class, () -> {
+               storageOperations.deleteFile("", key);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("deleteFile should throw EmptyKeyException when key is empty")
+        public void deleteFile_ShouldThrowEmptyKeyException_WhenKeyIsEmpty() throws Exception {
+            String bucketName = "bucket-name";
+            String key = "";
+
+            assertThrows(EmptyKeyException.class, () -> {
+               storageOperations.deleteFile(bucketName, key);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("deleteFile should throw NullBucketNameException when bucket name is null")
+        public void deleteFile_ShouldThrowNullBucketNameException_WhenBucketNameIsNull() throws Exception {
+            String key = "path/to/file.txt";
+
+            assertThrows(NullBucketNameException.class, () -> {
+                storageOperations.deleteFile(null, key);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("deleteFile should throw NullKeyException when key is null")
+        public void deleteFile_ShouldThrowNullKeyException_WhenKeyIsNull() throws Exception {
+            String bucketName = "bucket-name";
+
+            assertThrows(NullKeyException.class, () -> {
+                storageOperations.deleteFile(bucketName, null);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("deleteFile should throw BucketDoesNotExistsException when bucket does not exists")
+        public void deleteFile_ShouldThrowBucketDoesNotExistsException_WhenBucketDoesNotExists() throws Exception {
+            String bucketName = "bucket-name";
+            String key = "path/to/file.txt";
+
+            when(mockS3Client.deleteObject(any(DeleteObjectRequest.class)))
+                    .thenThrow(NoSuchBucketException.builder().message("The specified bucket does not exist").build());
+
+            assertThrows(BucketDoesNotExistsException.class, () -> {
+                storageOperations.deleteFile(bucketName, key);
+            });
+
+            verify(mockS3Client).deleteObject(any(DeleteObjectRequest.class));
+        }
+
+        @Test
+        @DisplayName("deleteFile should throw InvalidBucketNameException when bucket name is invalid")
+        public void deleteFile_ShouldThrowInvalidBucketNameException_WhenBucketNameIsInvalid() throws Exception {
+            String bucketName = "Invalid_BucketName";
+            String key = "s3/path/to/file.txt";
+
+            assertThrows(InvalidBucketNameException.class, () -> {
+               storageOperations.deleteFile(bucketName, key);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("deleteFile should throw StorageException when unknown error occurs")
+        public void deleteFile_ShouldThrowStorageException_WhenUnknownErrorOccurs() throws Exception {
+            String bucketName = "my-bucket";
+            String key = "s3/path/to/file.txt";
+
+            RuntimeException unknownError = new RuntimeException("Simulated network failure");
+
+            when(mockS3Client.deleteObject(any(DeleteObjectRequest.class)))
+                    .thenThrow(unknownError);
+
+            assertThrows(StorageException.class, () -> {
+                storageOperations.deleteFile(bucketName, key);
+            });
+
+            verify(mockS3Client).deleteObject(any(DeleteObjectRequest.class));
+        }
+    }
 }
