@@ -1379,4 +1379,85 @@ public class AwsSdkStorageOperationsTest {
             verify(mockS3Client).listBuckets();
         }
     }
+
+    @Nested
+    class bucketExistsTest {
+        @Test
+        @DisplayName("should return true when bucket exists")
+        public void bucketExists_ShouldReturnTrue_WhenBucketExists() throws Exception {
+            String bucketName = "my-existing-bucket";
+
+            boolean result = storageOperations.bucketExists(bucketName);
+
+            assertTrue(result, "Should return true for an existing bucket.");
+
+            ArgumentCaptor<HeadBucketRequest> captor = ArgumentCaptor.forClass(HeadBucketRequest.class);
+            verify(mockS3Client).headBucket(captor.capture());
+            assertEquals(bucketName, captor.getValue().bucket());
+        }
+
+        @Test
+        @DisplayName("should return false when bucket does not exist")
+        public void bucketExists_ShouldReturnFalse_WhenBucketDoesNotExist() throws StorageException {
+            String bucketName = "non-existent-bucket";
+
+            when(mockS3Client.headBucket(any(HeadBucketRequest.class)))
+                    .thenThrow(NoSuchBucketException.builder().build());
+
+            boolean result = storageOperations.bucketExists(bucketName);
+
+            assertFalse(result, "Should return false for a non-existent bucket.");
+
+            verify(mockS3Client).headBucket(any(HeadBucketRequest.class));
+        }
+
+        @Test
+        @DisplayName("bucketExists should throw InvalidBucketNameException when bucket name is invalid")
+        public void bucketExists_ShouldThrowInvalidBucketNameException_WhenBucketNameIsInvalid() throws Exception {
+            String bucketName = "Invalid_BucketName";
+
+            assertThrows(InvalidBucketNameException.class, () -> {
+                storageOperations.bucketExists(bucketName);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("bucketExists should throw EmptyBucketNameException when bucket name is empty")
+        public void bucketExists_ShouldThrowEmptyBucketNameException_WhenBucketNameIsEmpty() throws Exception {
+            assertThrows(EmptyBucketNameException.class, () -> {
+                storageOperations.bucketExists("");
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("bucketExists should throw NullBucketNameException when bucket name is null")
+        public void bucketExists_ShouldThrowNullBucketNameException_WhenBucketNameIsNull() throws Exception {
+            assertThrows(NullBucketNameException.class, () -> {
+                storageOperations.bucketExists(null);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("bucketExists should throw StorageException when unknown error")
+        public void bucketExists_ShouldThrowStorageException_WhenUnknownError() throws Exception {
+            String bucketName = "my-bucket";
+
+            RuntimeException unknownError = new RuntimeException("Unknown connection error");
+
+            when(mockS3Client.headBucket(any(HeadBucketRequest.class)))
+                    .thenThrow(unknownError);
+
+            assertThrows(StorageException.class, () -> {
+                storageOperations.bucketExists(bucketName);
+            });
+
+            verify(mockS3Client).headBucket(any(HeadBucketRequest.class));
+        }
+    }
 }
