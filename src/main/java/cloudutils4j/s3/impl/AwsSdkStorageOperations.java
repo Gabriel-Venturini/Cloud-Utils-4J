@@ -226,7 +226,6 @@ public class AwsSdkStorageOperations implements StorageOperations {
         }
     }
 
-    // TODO: create the unit tests for this function
     @Override
     public List<String> listBuckets() throws StorageException {
         try {
@@ -234,8 +233,11 @@ public class AwsSdkStorageOperations implements StorageOperations {
                     .map(Bucket::name)
                     .collect(Collectors.toList());
         } catch (S3Exception e) {
-            throw new StorageException("Failed to list buckets: " + e.getMessage(), e);
+            S3ExceptionHandler.handle(e, "list buckets", null);
+        } catch (Exception e) {
+            S3ExceptionHandler.handleUnknownError(e, "list buckets");
         }
+        return Collections.emptyList();
     }
 
     // TODO: create the unit tests for this function
