@@ -137,7 +137,7 @@ public class AwsSdkStorageOperations implements StorageOperations {
     }
 
     @Override
-    public void downloadFile(String bucketName, String sourceKey, String localDestinationPath) throws ObjectNotFoundException, StorageException {
+    public void downloadFile(String bucketName, String sourceKey, String localDestinationPath) throws StorageException {
         Map<String, String> downloadParams = new HashMap<>();
         downloadParams.put(sourceKey, "sourceKey");
         downloadParams.put(localDestinationPath, "localDestinationPath");
@@ -175,9 +175,13 @@ public class AwsSdkStorageOperations implements StorageOperations {
         }
     }
 
-    // TODO: create the unit tests for this function
     @Override
-    public void copyFile(String sourceBucket, String sourceKey, String destBucket, String destKey) throws ObjectNotFoundException, StorageException {
+    public void copyFile(String sourceBucket, String sourceKey, String destBucket, String destKey) throws StorageException {
+        S3BucketValidator.validate(sourceBucket);
+        S3BucketValidator.validate(destBucket);
+        S3ParamValidator.validate(sourceKey, "sourceKey");
+        S3ParamValidator.validate(destKey, "destinationKey");
+
         try {
             CopyObjectRequest request = CopyObjectRequest.builder()
                     .sourceBucket(sourceBucket)
@@ -186,10 +190,10 @@ public class AwsSdkStorageOperations implements StorageOperations {
                     .destinationKey(destKey)
                     .build();
             s3.copyObject(request);
-        } catch (NoSuchKeyException e) {
-            throw new ObjectNotFoundException("Source object not found: " + sourceKey);
         } catch (S3Exception e) {
-            throw new StorageException("Failed to copy file: " + e.getMessage(), e);
+            S3ExceptionHandler.handle(e, "copy file", sourceBucket);
+        } catch (Exception e) {
+            S3ExceptionHandler.handleUnknownError(e, "copy file");
         }
     }
 

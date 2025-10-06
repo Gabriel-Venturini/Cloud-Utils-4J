@@ -33,6 +33,7 @@ import software.amazon.awssdk.services.s3.model.*;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
@@ -859,6 +860,251 @@ public class AwsSdkStorageOperationsTest {
             });
 
             verify(mockS3Client).deleteObject(any(DeleteObjectRequest.class));
+        }
+    }
+
+    @Nested
+    class copyFileTest {
+        @Test
+        @DisplayName("copyFile should copy file successfully when file exists")
+        public void copyFile_ShouldCopyFile_WhenFileExists() throws Exception {
+            String sourceBucket = "source-bucket";
+            String sourceKey = "s3/path/to/file.txt";
+            String destBucket = "dest-bucket";
+            String destKey = "s3/path/to/sub/";
+
+            storageOperations.copyFile(sourceBucket, sourceKey, destBucket, destKey);
+
+            ArgumentCaptor<CopyObjectRequest> captor = ArgumentCaptor.forClass(CopyObjectRequest.class);
+
+            verify(mockS3Client).copyObject(captor.capture());
+
+            CopyObjectRequest capturedRequest = captor.getValue();
+
+            assertAll(
+                    () -> assertEquals(sourceBucket, capturedRequest.sourceBucket(), "The source bucket provided on the request is incorrect."),
+                    () -> assertEquals(sourceKey, capturedRequest.sourceKey(), "The destination bucket provided on the request is incorrect."),
+                    () -> assertEquals(destBucket, capturedRequest.destinationBucket(), "The destination bucket provided on the request is incorrect."),
+                    () -> assertEquals(destKey, capturedRequest.destinationKey(), "The destination bucket provided on the request is incorrect.")
+            );
+        }
+
+        @Test
+        @DisplayName("copyFile should throw FileDoesNotExistsException when file does not exists")
+        public void copyFile_ShouldThrowFileDoesNotExistsException_WhenFileDoesNotExists() throws Exception {
+            String  sourceBucket = "source-bucket";
+            String sourceKey = "s3/path/to/does_not_exists.txt";
+            String destBucket = "dest-bucket";
+            String destKey = "s3/path/to/sub/";
+
+            when(mockS3Client.copyObject(any(CopyObjectRequest.class)))
+                    .thenThrow(NoSuchKeyException.builder().message("The specified sourceKey does not exist").build());
+
+            assertThrows(FileDoesNotExistsException.class, () -> {
+                storageOperations.copyFile(sourceBucket, sourceKey, destBucket, destKey);
+            });
+
+            verify(mockS3Client).copyObject(any(CopyObjectRequest.class));
+        }
+
+        @Test
+        @DisplayName("copyFile should throw BucketDoesNotExistsException when sourceBucket does not exists")
+        public void copyFile_ShouldThrowBucketDoesNotExistsException_WhenSourceBucketDoesNotExists() throws Exception {
+            String  sourceBucket = "source-bucket";
+            String sourceKey = "s3/path/to/file.txt";
+            String destBucket = "dest-bucket";
+            String destKey = "s3/path/to/";
+
+            when(mockS3Client.copyObject(any(CopyObjectRequest.class)))
+                    .thenThrow(NoSuchBucketException.builder().message("The specified sourceBucket does not exist").build());
+
+            assertThrows(BucketDoesNotExistsException.class, () -> {
+                storageOperations.copyFile(sourceBucket, sourceKey, destBucket, destKey);
+            });
+
+            verify(mockS3Client).copyObject(any(CopyObjectRequest.class));
+        }
+
+        @Test
+        @DisplayName("copyFile should throw BucketDoesNotExistsException when destBucket does not exists")
+        public void copyFile_ShouldThrowBucketDoesNotExistsException_WhenDestBucketDoesNotExists() throws Exception {
+            String  sourceBucket = "source-bucket";
+            String sourceKey = "s3/path/to/file.txt";
+            String destBucket = "dest-bucket";
+            String destKey = "s3/path/to/";
+
+            when(mockS3Client.copyObject(any(CopyObjectRequest.class)))
+                    .thenThrow(NoSuchBucketException.builder().message("The specified destBucket does not exist").build());
+
+            assertThrows(BucketDoesNotExistsException.class, () -> {
+                storageOperations.copyFile(sourceBucket, sourceKey, destBucket, destKey);
+            });
+
+            verify(mockS3Client).copyObject(any(CopyObjectRequest.class));
+        }
+
+        @Test
+        @DisplayName("copyFile should throw InvalidBucketNameException when sourceBucket name is invalid")
+        public void copyFile_ShouldThrowInvalidBucketNameException_WhenSourceBucketNameIsInvalid() throws Exception {
+            String  sourceBucket = "Invalid_BucketName";
+            String sourceKey = "s3/path/to/file.txt";
+            String destBucket = "dest-bucket";
+            String destKey = "s3/path/to/";
+
+            assertThrows(InvalidBucketNameException.class, () -> {
+                storageOperations.copyFile(sourceBucket, sourceKey, destBucket, destKey);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("copyFile should throw InvalidBucketNameException when destBucket name is invalid")
+        public void copyFile_ShouldThrowInvalidBucketNameException_WhenDestBucketNameIsInvalid() throws Exception {
+            String  sourceBucket = "source-bucket";
+            String sourceKey = "s3/path/to/file.txt";
+            String destBucket = "Invalid_BucketName";
+            String destKey = "s3/path/to/";
+
+            assertThrows(InvalidBucketNameException.class, () -> {
+                storageOperations.copyFile(sourceBucket, sourceKey, destBucket, destKey);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("copyFile should throw EmptyBucketNameException when sourceBucket name is empty")
+        public void copyFile_ShouldThrowEmptyBucketNameException_WhenSourceBucketNameIsEmpty() throws Exception {
+            String  sourceBucket = "";
+            String sourceKey = "s3/path/to/file.txt";
+            String destBucket = "Invalid_BucketName";
+            String destKey = "s3/path/to/";
+
+            assertThrows(EmptyBucketNameException.class, () -> {
+                storageOperations.copyFile(sourceBucket, sourceKey, destBucket, destKey);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("copyFile should throw EmptyBucketNameException when destBucket name is empty")
+        public void copyFile_ShouldThrowEmptyBucketNameException_WhenDestBucketNameIsEmpty() throws Exception {
+            String  sourceBucket = "source-bucket";
+            String sourceKey = "s3/path/to/file.txt";
+            String destBucket = "";
+            String destKey = "s3/path/to/sub/";
+
+            assertThrows(EmptyBucketNameException.class, () -> {
+                storageOperations.copyFile(sourceBucket, sourceKey, destBucket, destKey);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("copyFile should throw NullBucketNameException when sourceBucket is null")
+        public void copyFile_ShouldThrowNullBucketNameException_WhenSourceBucketIsNull() throws Exception {
+            String sourceKey = "s3/path/to/file.txt";
+            String destBucket = "dest-bucket";
+            String destKey = "s3/path/to/sub/";
+
+            assertThrows(NullBucketNameException.class, () -> {
+                storageOperations.copyFile(null, sourceKey, destBucket, destKey);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("copyFile should throw NullBucketNameException when destBucket is null")
+        public void copyFile_ShouldThrowNullBucketNameException_WhenDestBucketIsNull() throws Exception {
+            String sourceBucket = "source-bucket";
+            String sourceKey = "s3/path/to/file.txt";
+            String destKey = "s3/path/to/sub/";
+
+            assertThrows(NullBucketNameException.class, () -> {
+                storageOperations.copyFile(sourceBucket, sourceKey, null, destKey);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("copyFile should throw EmptySourceKeyException when sourceKey is empty")
+        public void copyFile_ShouldThrowEmptySourceKeyException_WhenSourceKeyIsEmpty() throws Exception {
+            String  sourceBucket = "source-bucket";
+            String destBucket = "dest-bucket";
+            String destKey = "s3/path/to/sub/";
+
+            assertThrows(EmptySourceKeyException.class, () -> {
+                storageOperations.copyFile(sourceBucket, "", destBucket, destKey);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("copyFile should throw EmptyDestKeyException when destKey is empty")
+        public void copyFile_ShouldThrowEmptyDestinationKeyException_WhenDestKeyIsEmpty() throws Exception {
+            String sourceBucket = "source-bucket";
+            String sourceKey = "s3/path/to/file.txt";
+            String destBucket = "dest-bucket";
+
+            assertThrows(EmptyDestinationKeyException.class, () -> {
+                storageOperations.copyFile(sourceBucket, sourceKey, destBucket, "");
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("copyFile should throw NullSourceKeyException when sourceKey is null")
+        public void copyFile_ShouldThrowNullSourceKeyException_WhenSourceKeyIsNull() throws Exception {
+            String sourceBucket = "source-bucket";
+            String destBucket = "dest-bucket";
+            String destKey = "s3/path/to/";
+
+            assertThrows(NullSourceKeyException.class, () -> {
+                storageOperations.copyFile(sourceBucket, null, destBucket, destKey);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("copyFile should throw NullDestinationKeyException when sourceKey is null")
+        public void copyFile_ShouldThrowNullDestinationKeyException_WhenSourceKeyIsNull() throws Exception {
+            String sourceBucket = "source-bucket";
+            String sourceKey = "s3/path/to/file.txt";
+            String destBucket = "dest-bucket";
+
+            assertThrows(NullDestinationKeyException.class, () -> {
+                storageOperations.copyFile(sourceBucket, sourceKey, destBucket, null);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("copyFile should throw StorageException when unknown error occurs")
+        public void copyFile_ShouldThrowStorageException_WhenUnknownErrorOccurs() throws Exception {
+            String sourceBucket = "source-bucket";
+            String sourceKey = "s3/path/to/file.txt";
+            String destBucket = "dest-bucket";
+            String destKey = "s3/path/to/sub/";
+
+            RuntimeException unknownError = new RuntimeException("Simulated network failure");
+
+            when(mockS3Client.copyObject(any(CopyObjectRequest.class)))
+                    .thenThrow(unknownError);
+
+            assertThrows(StorageException.class, () -> {
+                storageOperations.copyFile(sourceBucket, sourceKey, destBucket, destKey);
+            });
+
+            verify(mockS3Client).copyObject(any(CopyObjectRequest.class));
         }
     }
 }
