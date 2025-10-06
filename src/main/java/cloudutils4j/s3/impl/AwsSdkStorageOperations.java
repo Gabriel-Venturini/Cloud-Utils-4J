@@ -240,17 +240,21 @@ public class AwsSdkStorageOperations implements StorageOperations {
         return Collections.emptyList();
     }
 
-    // TODO: create the unit tests for this function
     @Override
     public boolean bucketExists(String bucketName) throws StorageException {
+        S3BucketValidator.validate(bucketName);
+
         try {
             s3.headBucket(HeadBucketRequest.builder().bucket(bucketName).build());
             return true;
         } catch (NoSuchBucketException e) {
             return false;
         } catch (S3Exception e) {
-            throw new StorageException("Failed to check bucket existence: " + e.getMessage(), e);
+            S3ExceptionHandler.handle(e, "bucket exists", bucketName);
+        } catch (Exception e) {
+            S3ExceptionHandler.handleUnknownError(e, "bucket exists");
         }
+        return false;
     }
 
     // TODO: create the unit tests for this function
