@@ -34,14 +34,19 @@ public class S3ParamValidator {
                 break;
             case "key":
                 validateKey(param);
+                break;
             case "localPath":
                 validateLocalPath(param);
+                break;
             case "destinationKey":
                 validateDestinationKey(param);
+                break;
             case "sourceKey":
                 validateSourceKey(param);
+                break;
             case "localDestinationPath":
                 validateLocalDestinationPath(param);
+                break;
             default:
                 // TODO: treat unknown parameters
                 break;
