@@ -158,12 +158,10 @@ public class AwsSdkStorageOperations implements StorageOperations {
         }
     }
 
-    // TODO: create the unit tests for this function
     @Override
-    public void deleteFile(String bucketName, String key) throws ObjectNotFoundException, StorageException {
-        if (!fileExists(bucketName, key)) {
-            throw new ObjectNotFoundException("Object not found, cannot delete: " + key);
-        }
+    public void deleteFile(String bucketName, String key) throws StorageException {
+        runValidations(bucketName, Collections.singletonMap(key, "key"));
+
         try {
             DeleteObjectRequest request = DeleteObjectRequest.builder()
                     .bucket(bucketName)
@@ -171,7 +169,9 @@ public class AwsSdkStorageOperations implements StorageOperations {
                     .build();
             s3.deleteObject(request);
         } catch (S3Exception e) {
-            throw new StorageException("Failed to delete file: " + e.getMessage(), e);
+            S3ExceptionHandler.handle(e, "delete file", bucketName);
+        } catch (Exception e) {
+            S3ExceptionHandler.handleUnknownError(e, "delete file");
         }
     }
 
