@@ -36,9 +36,12 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.rmi.NoSuchObjectException;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -1174,6 +1177,151 @@ public class AwsSdkStorageOperationsTest {
 
             verify(mockS3Client).copyObject(any(CopyObjectRequest.class));
             verify(mockS3Client).deleteObject(any(DeleteObjectRequest.class));
+        }
+    }
+
+    @Nested
+    class getFileInfoTest {
+        @Test
+        @DisplayName("getFileInfo should get file info successfully when the file exists")
+        public void getFileInfo_ShouldReturnFileInfo_WhenFileExists() throws Exception {
+            String bucketName = "bucket-name";
+            String key = "path/to/file.txt";
+
+            Instant fakeLastModified = Instant.parse("2025-10-06T10:15:30.00Z");
+            String fakeETag = "\"a1b2c3d4e5f67890\"";
+
+            HeadObjectResponse fakeResponse = HeadObjectResponse.builder()
+                    .contentLength(12345L)
+                    .lastModified(fakeLastModified)
+                    .contentType("application/pdf")
+                    .eTag(fakeETag)
+                    .build();
+
+            when(mockS3Client.headObject(any(HeadObjectRequest.class))).thenReturn(fakeResponse);
+
+            Map<String, String> fileInfo = storageOperations.getFileInfo(bucketName, key);
+
+            assertNotNull(fileInfo, "The information map should be null.");
+            assertAll(
+                    () -> assertEquals("12345", fileInfo.get("Content-Length"), "Content-Length value is incorrect."),
+                    () -> assertEquals(fakeLastModified.toString(), fileInfo.get("Last-Modified"), "Last-Modified value is incorrect."),
+                    () -> assertEquals("application/pdf", fileInfo.get("Content-Type"), "Content-Type is incorrect."),
+                    () -> assertEquals(fakeETag, fileInfo.get("ETag"), "ETag is incorrect.")
+            );
+
+            verify(mockS3Client).headObject(any(HeadObjectRequest.class));
+        }
+
+        @Test
+        @DisplayName("getFileInfo should throw FileDoesNotExistsException when file does not exists")
+        public void getFileInfo_ShouldThrowFileDoesNotExistsException_WhenFileDoesNotExists() throws Exception {
+            String bucketName = "bucket-name";
+            String key = "path/to/file.txt";
+
+            when(mockS3Client.headObject(any(HeadObjectRequest.class)))
+                    .thenThrow(NoSuchKeyException.builder().message("The specified file does not exist").build());
+
+            assertThrows(FileDoesNotExistsException.class, () -> {
+                storageOperations.getFileInfo(bucketName, key);
+            });
+
+            verify(mockS3Client).headObject(any(HeadObjectRequest.class));
+        }
+
+        @Test
+        @DisplayName("getFileInfo should throw BucketDoesNotExistsException when bucket does not exists")
+        public void getFileInfo_ShouldThrowBucketDoesNotExistsException_WhenBucketDoesNotExists() throws Exception {
+            String bucketName = "bucket-name";
+            String key = "path/to/file.txt";
+
+            when(mockS3Client.headObject(any(HeadObjectRequest.class)))
+                    .thenThrow(NoSuchBucketException.builder().message("The specified bucket does not exist").build());
+
+            assertThrows(BucketDoesNotExistsException.class, () -> {
+               storageOperations.getFileInfo(bucketName, key);
+            });
+
+            verify(mockS3Client).headObject(any(HeadObjectRequest.class));
+        }
+
+        @Test
+        @DisplayName("getFileInfo should throw InvalidBucketNameException when bucket name is invalid")
+        public void getFileInfo_ShouldThrowInvalidBucketNameException_WhenBucketNameIsInvalid() throws Exception {
+            String bucketName = "Invalid_BucketName";
+            String key = "path/to/file.txt";
+
+            assertThrows(InvalidBucketNameException.class, () -> {
+                storageOperations.getFileInfo(bucketName, key);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("getFileInfo should throw EmptyBucketNameException when bucket name is empty")
+        public void getFileInfo_ShouldThrowEmptyBucketNameException_WhenBucketNameIsEmpty() throws Exception {
+            String key = "path/to/file.txt";
+
+            assertThrows(EmptyBucketNameException.class, () -> {
+                storageOperations.getFileInfo("", key);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("getFileInfo should throw NullBucketNameException when bucket name is null")
+        public void getFileInfo_ShouldThrowNullBucketNameException_WhenBucketNameIsNull() throws Exception {
+            String key = "path/to/file.txt";
+
+            assertThrows(NullBucketNameException.class, () -> {
+                storageOperations.getFileInfo(null, key);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("getFileInfo should throw EmptyKeyException when key is empty")
+        public void getFileInfo_ShouldThrowEmptyKeyException_WhenKeyIsEmpty() throws Exception {
+            String bucketName = "my-bucket";
+
+            assertThrows(EmptyKeyException.class, () -> {
+                storageOperations.getFileInfo(bucketName, "");
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("getFileInfo should throw NullKeyException when key is null")
+        public void getFileInfo_ShouldThrowNullKeyException_WhenKeyIsNull() throws Exception {
+            String bucketName = "my-bucket";
+
+            assertThrows(NullKeyException.class, () -> {
+                storageOperations.getFileInfo(bucketName, null);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("getFileInfo should throw StorageException when unknown error")
+        public void getFileInfo_ShouldThrowStorageException_WhenUnknownError() throws Exception {
+            String bucketName = "my-bucket";
+            String key = "path/to/file.txt";
+
+            RuntimeException unknownError = new RuntimeException("Unknown connection error");
+
+            when(mockS3Client.headObject(any(HeadObjectRequest.class)))
+                    .thenThrow(unknownError);
+
+            assertThrows(StorageException.class, () -> {
+                storageOperations.getFileInfo(bucketName, key);
+            });
+
+            verify(mockS3Client).headObject(any(HeadObjectRequest.class));
         }
     }
 }

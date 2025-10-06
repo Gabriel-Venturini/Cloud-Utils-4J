@@ -203,9 +203,10 @@ public class AwsSdkStorageOperations implements StorageOperations {
         deleteFile(sourceBucket, sourceKey);
     }
 
-    // TODO: create the unit tests for this function
     @Override
-    public Map<String, String> getFileInfo(String bucketName, String key) throws ObjectNotFoundException, StorageException {
+    public Map<String, String> getFileInfo(String bucketName, String key) throws StorageException {
+        runValidations(bucketName, Collections.singletonMap(key, "key"));
+
         try {
             HeadObjectRequest request = HeadObjectRequest.builder().bucket(bucketName).key(key).build();
             HeadObjectResponse response = s3.headObject(request);
@@ -216,10 +217,12 @@ public class AwsSdkStorageOperations implements StorageOperations {
             info.put("Content-Type", response.contentType());
             info.put("ETag", response.eTag());
             return info;
-        } catch (NoSuchKeyException e) {
-            throw new ObjectNotFoundException("Object not found: " + key);
         } catch (S3Exception e) {
-            throw new StorageException("Failed to get file info: " + e.getMessage(), e);
+            S3ExceptionHandler.handle(e, "get file info", bucketName);
+            return null;
+        } catch (Exception e) {
+            S3ExceptionHandler.handleUnknownError(e, "get file info");
+            return null;
         }
     }
 
