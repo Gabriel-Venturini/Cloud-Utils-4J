@@ -1,5 +1,6 @@
 package cloudutils4j.s3.utils;
 
+import cloudutils4j.exceptions.s3.notempty.bucket.BucketIsNotEmptyException;
 import cloudutils4j.exceptions.s3.notfound.files.FileDoesNotExistsException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
@@ -38,6 +39,8 @@ public final class S3ExceptionHandler {
             throw new FileDoesNotExistsException("Object not found during " + operationName + ": " + resourceName);
         } else if (e instanceof BucketAlreadyOwnedByYouException || e instanceof BucketAlreadyExistsException) {
             throw new cloudutils4j.exceptions.s3.conflict.bucket.BucketAlreadyExistsException("Bucket already exists: " + resourceName);
+        } else if (e.awsErrorDetails() != null && "BucketNotEmpty".equals(e.awsErrorDetails().errorCode())) {
+            throw new BucketIsNotEmptyException("Bucket is not empty and cannot be deleted: " + resourceName);
         } else {
             throw new StorageException(message + " S3Exception: " + e.getMessage(), e);
         }
