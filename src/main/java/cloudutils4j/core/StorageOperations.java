@@ -30,6 +30,10 @@ public interface StorageOperations {
      */
     List<String> listFiles(String bucketName, String prefix) throws BucketDoesNotExistsException, StorageException;
 
+    default List<String> listFiles(String bucketName) throws BucketDoesNotExistsException, StorageException {
+        return listFiles(bucketName, "");
+    }
+
     /**
      * Checks if an object exists in the specified bucket.
      *

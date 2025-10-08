@@ -87,11 +87,6 @@ public class AwsSdkStorageOperations implements StorageOperations {
         }
     }
 
-    // Method overloading to pass default values for the listFiles function if no value is provided
-    public List<String> listFiles(String bucketName) throws StorageException {
-        return listFiles(bucketName, "");
-    }
-
     @Override
     public boolean fileExists(String bucketName, String key) throws StorageException {
         runValidations(bucketName, Collections.singletonMap(key, "key"));
