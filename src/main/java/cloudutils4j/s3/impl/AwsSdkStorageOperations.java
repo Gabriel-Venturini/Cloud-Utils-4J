@@ -15,13 +15,11 @@ import cloudutils4j.s3.utils.S3BucketValidator;
 import cloudutils4j.s3.utils.S3ClientBuilderFactory;
 import cloudutils4j.s3.utils.S3ExceptionHandler;
 import cloudutils4j.s3.utils.S3ParamValidator;
+import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable;
 
 import java.io.File;
 import java.nio.file.Paths;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class AwsSdkStorageOperations implements StorageOperations {
@@ -74,10 +72,13 @@ public class AwsSdkStorageOperations implements StorageOperations {
                     .prefix(prefix)
                     .build();
 
-            ListObjectsV2Response response = s3.listObjectsV2(request);
-            return response.contents().stream()
-                    .map(S3Object::key)
-                    .collect(Collectors.toList());
+            List<String> allKeys = new ArrayList<>();
+
+            s3.listObjectsV2Paginator(request).stream()
+                    .flatMap(resp -> resp.contents().stream())
+                    .forEach(s3Object -> allKeys.add(s3Object.key()));
+
+            return allKeys;
         } catch (S3Exception e) {
             S3ExceptionHandler.handle(e, "list files", bucketName);
             return null;
