@@ -18,7 +18,7 @@ To include the library in your Java 8 project:
 <dependency>
     <groupId>org.cloudutils4j</groupId>
     <artifactId>CloudUtils4J</artifactId>
-    <version>1.0.3-Test</version>
+    <version>1.0.3-Stable</version>
 </dependency>
 ```
 
