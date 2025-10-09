@@ -32,6 +32,7 @@ import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
+import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -44,6 +45,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -78,16 +80,20 @@ public class AwsSdkStorageOperationsTest {
                     .contents(Arrays.asList(s3Object1, s3Object2))
                     .build();
 
-            when(mockS3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(fakeResponse);
+            ListObjectsV2Iterable mockIterable = mock(ListObjectsV2Iterable.class);
+            when(mockIterable.stream()).thenReturn(Stream.of(fakeResponse));
+
+            when(mockS3Client.listObjectsV2Paginator(any(ListObjectsV2Request.class)))
+                    .thenReturn(mockIterable);
 
             List<String> result = storageOperations.listFiles(bucketName, prefix);
 
             assertNotNull(result);
             assertEquals(2, result.size());
-            assertTrue(result.containsAll(Arrays.asList("my-folder/file1.txt", "my-folder/file2.png")));
+            assertTrue(result.contains("my-folder/file1.txt"));
+            assertTrue(result.contains("my-folder/file2.png"));
 
-            ArgumentCaptor<ListObjectsV2Request> requestCaptor = ArgumentCaptor.forClass(ListObjectsV2Request.class);
-            verify(mockS3Client, times(1)).listObjectsV2(requestCaptor.capture());
+            verify(mockS3Client, times(1)).listObjectsV2Paginator(any(ListObjectsV2Request.class));
         }
 
         @Test
@@ -104,16 +110,23 @@ public class AwsSdkStorageOperationsTest {
                     .contents(Arrays.asList(s3Object1, s3Object2, s3Object3))
                     .build();
 
-            when(mockS3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(fakeResponse);
+            ListObjectsV2Iterable mockIterable = mock(ListObjectsV2Iterable.class);
+            when(mockIterable.stream()).thenReturn(Stream.of(fakeResponse));
+
+            when(mockS3Client.listObjectsV2Paginator(any(ListObjectsV2Request.class)))
+                    .thenReturn(mockIterable);
 
             List<String> result = storageOperations.listFiles(bucketName, prefix);
 
             assertNotNull(result);
             assertEquals(3, result.size());
             assertTrue(result.containsAll(Arrays.asList("root_file.png", "my-folder/file1.txt", "my-folder/file2.png")));
+            assertTrue(result.contains("root_file.png"));
+            assertTrue(result.contains("my-folder/file1.txt"));
+            assertTrue(result.contains("my-folder/file2.png"));
 
             ArgumentCaptor<ListObjectsV2Request> requestCaptor = ArgumentCaptor.forClass(ListObjectsV2Request.class);
-            verify(mockS3Client, times(1)).listObjectsV2(requestCaptor.capture());
+            verify(mockS3Client, times(1)).listObjectsV2Paginator(requestCaptor.capture());
         }
 
         @Test
@@ -129,7 +142,11 @@ public class AwsSdkStorageOperationsTest {
                     .contents(Arrays.asList(s3Object1, s3Object2, s3Object3))
                     .build();
 
-            when(mockS3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(fakeResponse);
+            ListObjectsV2Iterable mockIterable = mock(ListObjectsV2Iterable.class);
+            when(mockIterable.stream()).thenReturn(Stream.of(fakeResponse));
+
+            when(mockS3Client.listObjectsV2Paginator(any(ListObjectsV2Request.class)))
+                    .thenReturn(mockIterable);
 
             List<String> result = storageOperations.listFiles(bucketName);
 
@@ -137,8 +154,7 @@ public class AwsSdkStorageOperationsTest {
             assertEquals(3, result.size());
             assertTrue(result.containsAll(Arrays.asList("root_file.png", "my-folder/file1.txt", "my-folder/file2.png")));
 
-            ArgumentCaptor<ListObjectsV2Request> requestCaptor = ArgumentCaptor.forClass(ListObjectsV2Request.class);
-            verify(mockS3Client, times(1)).listObjectsV2(requestCaptor.capture());
+            verify(mockS3Client, times(1)).listObjectsV2Paginator(any(ListObjectsV2Request.class));
         }
 
         @Test
@@ -146,11 +162,9 @@ public class AwsSdkStorageOperationsTest {
         void listFiles_ShouldReturnEmptyList_WhenBucketIsEmpty() throws Exception {
             String bucketName = "my-bucket";
 
-            ListObjectsV2Response fakeResponse = ListObjectsV2Response.builder()
-                    .contents(Collections.emptyList())
-                    .build();
-
-            when(mockS3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(fakeResponse);
+            ListObjectsV2Iterable mockIterable = mock(ListObjectsV2Iterable.class);
+            when(mockS3Client.listObjectsV2Paginator(any(ListObjectsV2Request.class)))
+                    .thenReturn(mockIterable);
 
             List<String> result = storageOperations.listFiles(bucketName);
 
@@ -164,14 +178,14 @@ public class AwsSdkStorageOperationsTest {
             String bucketName = "valid-bucket";
             String prefix = "prefix/";
 
-            when(mockS3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+            when(mockS3Client.listObjectsV2Paginator(any(ListObjectsV2Request.class)))
                     .thenThrow(NoSuchBucketException.builder().message("Bucket not found").build());
 
             assertThrows(BucketDoesNotExistsException.class, () -> {
                 storageOperations.listFiles(bucketName, prefix);
             });
 
-            verify(mockS3Client).listObjectsV2(any(ListObjectsV2Request.class));
+            verify(mockS3Client).listObjectsV2Paginator(any(ListObjectsV2Request.class));
         }
 
         @Test
@@ -231,11 +245,9 @@ public class AwsSdkStorageOperationsTest {
             String bucketName = "bucket";
             String prefix = "do-not-exist";
 
-            ListObjectsV2Response fakeResponse = ListObjectsV2Response.builder()
-                    .contents(Collections.emptyList())
-                    .build();
-
-            when(mockS3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(fakeResponse);
+            ListObjectsV2Iterable mockIterable = mock(ListObjectsV2Iterable.class);
+            when(mockS3Client.listObjectsV2Paginator(any(ListObjectsV2Request.class)))
+                    .thenReturn(mockIterable);
 
             List<String> result = storageOperations.listFiles(bucketName, prefix);
 
@@ -251,7 +263,7 @@ public class AwsSdkStorageOperationsTest {
 
             RuntimeException unknownError = new RuntimeException("Simulated network failure");
 
-            when(mockS3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+            when(mockS3Client.listObjectsV2Paginator(any(ListObjectsV2Request.class)))
                     .thenThrow(unknownError);
 
             StorageException thrownException = assertThrows(StorageException.class, () -> {
