@@ -18,7 +18,7 @@ To include the library in your Java 8 project:
 <dependency>
     <groupId>org.cloudutils4j</groupId>
     <artifactId>CloudUtils4J</artifactId>
-    <version>1.0.3-Test</version>
+    <version>1.3.3-Stable</version>
 </dependency>
 ```
 
@@ -47,6 +47,47 @@ storage.uploadFile(LOCAL_PATH, BUCKET_NAME, UPLOAD_KEY);
 } catch (StorageException e) {
 // Predictable and centralized error handling using custom exceptions
 logger.error("A standardized storage error occurred: {}", e.getMessage());
+}
+```
+
+### Asynchronous Operations & Progress Tracking (New in v1.3.3)
+
+For heavy I/O tasks, the library offers non-blocking methods (`uploadFileAsync`, `downloadFileAsync`) that return a standard Java `CompletableFuture`. You can monitor the transfer progress in real-time using `getStatusPercentage()`.
+
+``` java 
+// Initialize the storage service
+StorageOperations storage = new AwsSdkStorageOperations(endpoint, region, accessKey, secretKey);
+
+try {
+    // 1. Start the asynchronous upload (returns immediately)
+    CompletableFuture<PutObjectResponse> future = storage.uploadFileAsync(
+        "large-video.mp4", 
+        "my-bucket", 
+        "uploads/video.mp4"
+    );
+
+    // 2. Monitor progress while the operation runs in the background
+    long lastPercent = -1;
+    while (!future.isDone()) {
+        long currentPercent = storage.getStatusPercentage();
+        
+        if (currentPercent != lastPercent) {
+            System.out.println("Upload Progress: " + currentPercent + "%");
+            lastPercent = currentPercent;
+        }
+        
+        // Avoid tight polling loop
+        Thread.sleep(500);
+    }
+
+    // 3. Handle completion or errors
+    PutObjectResponse response = future.join(); // Blocks only at the end
+    System.out.println("Upload finished! ETag: " + response.eTag());
+
+} catch (CompletionException e) {
+    // Async errors are wrapped; unwrap to get the actual StorageException
+    Throwable cause = e.getCause();
+    System.err.println("Async upload failed: " + cause.getMessage());
 }
 ```
 
