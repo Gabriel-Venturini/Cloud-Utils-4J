@@ -1,11 +1,16 @@
 package cloudutils4j.core;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+
+import cloudutils4j.exceptions.s3.notfound.files.FileDoesNotExistsException;
 import cloudutils4j.exceptions.s3.notfound.bucket.BucketDoesNotExistsException;
 import cloudutils4j.exceptions.s3.notfound.object.ObjectNotFoundException;
 import cloudutils4j.exceptions.s3.io.StorageException;
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 
 /**
  * Defines a contract for operations with object storage services (S3-compatible).
@@ -16,6 +21,15 @@ import cloudutils4j.exceptions.s3.io.StorageException;
  * @author Gabriel Venturini
  */
 public interface StorageOperations {
+
+    // --- Auxiliary Operations ---
+    /**
+     * Returns the current percentage of progress for asynchronous file transfers.
+     * This is meant to be used outside this class to tell the progress of the operation.
+     *
+     * @return A long value representing the percentage of transfer completion (0–100).
+     */
+    long getStatusPercentage();
 
     // --- Object Operations ---
 
@@ -57,6 +71,21 @@ public interface StorageOperations {
     void uploadFile(String localPath, String bucketName, String destinationKey) throws BucketDoesNotExistsException, StorageException, IOException;
 
     /**
+     * Uploads a file asynchronously from the local filesystem to the storage service.
+     * <p>
+     * The method returns immediately with a {@link CompletableFuture} that completes
+     * when the upload finishes. Progress is tracked internally via getStatusPercentage().
+     *
+     * @param localPath The full path of the source file on the local machine.
+     * @param bucketName The name of the destination bucket.
+     * @param destinationKey The key (full file path) of the destination in the bucket.
+     * @return A {@link CompletableFuture} containing the {@link PutObjectResponse} when the upload completes.
+     * @throws StorageException For errors during communication with the storage service.
+     * @throws FileDoesNotExistsException If the local file does not exist.
+     */
+    CompletableFuture<PutObjectResponse> uploadFileAsync(String localPath, String bucketName, String destinationKey) throws BucketDoesNotExistsException, StorageException, IOException;
+
+    /**
      * Downloads an object from the storage service to the local filesystem.
      *
      * @param bucketName The name of the source bucket.
@@ -67,6 +96,21 @@ public interface StorageOperations {
      * @throws IOException If an error occurs while writing the local file.
      */
     void downloadFile(String bucketName, String sourceKey, String localDestinationPath) throws ObjectNotFoundException, StorageException, IOException;
+
+    /**
+     * Downloads an object asynchronously from the storage service to the local filesystem.
+     * <p>
+     * The method returns immediately with a {@link CompletableFuture} that completes
+     * when the download finishes. Progress is tracked internally via getStatusPercentage().
+     *
+     * @param bucketName The name of the source bucket.
+     * @param sourceKey The key (full file path) of the object to be downloaded.
+     * @param localDestinationPath The full destination path on the local machine.
+     * @return A {@link CompletableFuture} containing the {@link Path} to the downloaded file.
+     * @throws StorageException For errors during communication with the storage service.
+     * @throws FileDoesNotExistsException If the object is not found in the bucket.
+     */
+    CompletableFuture<Path> downloadFileAsync(String bucketName, String sourceKey, String localDestinationPath) throws ObjectNotFoundException, StorageException, IOException;
 
     /**
      * Deletes an object from a bucket.
