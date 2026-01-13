@@ -14,6 +14,7 @@ import cloudutils4j.exceptions.s3.io.StorageException;
 import cloudutils4j.exceptions.s3.notfound.files.FileDoesNotExistsException;
 import cloudutils4j.s3.impl.AwsSdkStorageOperations;
 
+import cloudutils4j.s3.utils.S3AsyncFileTransfer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -27,9 +28,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
+import software.amazon.awssdk.core.async.AsyncRequestBody;
+import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.http.AbortableInputStream;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable;
@@ -37,14 +41,15 @@ import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.rmi.NoSuchObjectException;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -56,17 +61,25 @@ public class AwsSdkStorageOperationsTest {
     @Mock
     private S3Client mockS3Client;
 
+    @Mock
+    private S3AsyncClient mockS3AsyncClient;
+
+    @Mock
+    private S3AsyncFileTransfer s3AsyncFileTransfer;
+
     private AwsSdkStorageOperations storageOperations;
+    private AwsSdkStorageOperations asyncStorageOperations;
 
     @BeforeEach
     public void setUp() throws Exception {
-        storageOperations = new AwsSdkStorageOperations(mockS3Client);
+        storageOperations = new AwsSdkStorageOperations(mockS3Client, null, null);
+        asyncStorageOperations = new AwsSdkStorageOperations(null, mockS3AsyncClient, s3AsyncFileTransfer);
     }
 
     // --- File Operations ---
 
     @Nested
-    class ListFilesTest {
+    class listFilesTest  {
         @Test
         @DisplayName("[SUCCESS] listFiles should return a list of file keys")
         void listFiles_ShouldReturnListOfKeys_WhenBucketExists() throws Exception {
@@ -579,6 +592,474 @@ public class AwsSdkStorageOperationsTest {
             verify(mockS3Client).putObject(any(PutObjectRequest.class), any(RequestBody.class));
             }
         }
+
+    @Nested
+    class uploadFileAsyncTest {
+        @Test
+        @DisplayName("[SUCCESS] uploadFileAsync should successfully upload a file")
+        void uploadFileAsync_ShouldSuccesfullyUploadFile(@TempDir Path tempDir) throws Exception {
+
+            String bucketName = "my-bucket";
+            String destinationKey = "destination/path/file.txt";
+
+            Path tempFilePath = tempDir.resolve("test-upload.txt");
+            Files.write(tempFilePath, "File content".getBytes());
+            String localPath = tempFilePath.toAbsolutePath().toString();
+
+            AsyncRequestBody mockRequestBody = mock(AsyncRequestBody.class);
+
+            when(s3AsyncFileTransfer.uploadFromFile(tempFilePath))
+                    .thenReturn(mockRequestBody);
+
+            when(mockS3AsyncClient.putObject(any(PutObjectRequest.class), eq(mockRequestBody)))
+                    .thenReturn(CompletableFuture.completedFuture(
+                            PutObjectResponse.builder().build()
+                    ));
+
+            CompletableFuture<PutObjectResponse> future =
+                    asyncStorageOperations.uploadFileAsync(localPath, bucketName, destinationKey);
+
+            future.get(); // wait for completion
+
+            ArgumentCaptor<PutObjectRequest> captor =
+                    ArgumentCaptor.forClass(PutObjectRequest.class);
+
+            verify(mockS3AsyncClient).putObject(captor.capture(), eq(mockRequestBody));
+
+            PutObjectRequest req = captor.getValue();
+            assertEquals(bucketName, req.bucket());
+            assertEquals(destinationKey, req.key());
+        }
+
+        @Test
+        @DisplayName("[FAILURE] uploadFileAsync should throw FileDoesNotExistsException")
+        public void uploadFile_ShouldThrowFileDoesNotExistsException_WhenFileDoesNotExists() throws Exception {
+            String localPath = "does-not/exist.txt";
+            String bucketName = "my-bucket";
+            String destinationKey = "path/to/non-existent-folder/";
+
+            assertThrows(FileDoesNotExistsException.class, () -> {
+                asyncStorageOperations.uploadFileAsync(localPath, bucketName, destinationKey);
+            });
+
+            verifyNoInteractions(mockS3AsyncClient);
+        }
+
+        @Test
+        @DisplayName("[FAILURE] uploadFileAsync should fail when bucket does not exist")
+        void uploadFileAsync_ShouldFail_WhenBucketDoesNotExist(@TempDir Path tempDir) throws Exception {
+
+            String bucketName = "dont-exist";
+            String destinationKey = "files/subdirectory/upload.txt";
+
+            Path tempFilePath = tempDir.resolve("test-upload.txt");
+            Files.write(tempFilePath, "File content".getBytes());
+            String localPath = tempFilePath.toAbsolutePath().toString();
+
+            AsyncRequestBody requestBody = mock(AsyncRequestBody.class);
+            when(s3AsyncFileTransfer.uploadFromFile(any()))
+                    .thenReturn(requestBody);
+
+            CompletableFuture<PutObjectResponse> failedFuture = new CompletableFuture<>();
+            failedFuture.completeExceptionally(
+                    NoSuchBucketException.builder()
+                            .message("Bucket not found")
+                            .build()
+            );
+
+            when(mockS3AsyncClient.putObject(any(PutObjectRequest.class), eq(requestBody)))
+                    .thenReturn(failedFuture);
+
+            CompletableFuture<PutObjectResponse> future =
+                    asyncStorageOperations.uploadFileAsync(localPath, bucketName, destinationKey);
+
+            ExecutionException ex = assertThrows(ExecutionException.class, future::get);
+
+            assertInstanceOf(BucketDoesNotExistsException.class, ex.getCause());
+
+            verify(mockS3AsyncClient)
+                    .putObject(any(PutObjectRequest.class), eq(requestBody));
+        }
+
+        @Test
+        @DisplayName("[FAILURE] uploadFileAsync should throw EmptyBucketNameException when bucket name is empty")
+        public void uploadFile_ShouldThrowEmptyBucketNameException_WhenBucketNameIsEmpty() throws Exception {
+            String localPath = "does-not/exist.txt";
+            String bucketName = "";
+            String destinationKey = "path/to/non-existent-folder/";
+
+            assertThrows(EmptyBucketNameException.class, () -> {
+                asyncStorageOperations.uploadFileAsync(localPath, bucketName, destinationKey);
+            });
+
+            verify(mockS3AsyncClient, never()).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+        }
+
+        @Test
+        @DisplayName("[FAILURE] uploadFileAsync should throw EmptyLocalPathException when localPath is empty")
+        public void uploadFile_ShouldThrowEmptyLocalPathException_WhenLocalPathIsEmpty() throws Exception {
+            String localPath = "";
+            String bucketName = "my-bucket";
+            String destinationKey = "path/to/non-existent-folder/";
+
+            assertThrows(EmptyDestinationLocalPathException.class, () -> {
+                asyncStorageOperations.uploadFileAsync(localPath, bucketName, destinationKey);
+            });
+
+            verify(mockS3AsyncClient, never()).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+        }
+
+        @Test
+        @DisplayName("[FAILURE] uploadFileAsync should throw EmptyDestinationKeyException when destinationKey is empty")
+        public void uploadFile_ShouldThrowEmptyDestinationKeyException_WhenDestinationKeyIsEmpty() throws Exception {
+            String localPath = "local-path/file.txt";
+            String bucketName = "my-bucket";
+            String destinationKey = "";
+
+            assertThrows(EmptyDestinationKeyException.class, () -> {
+                asyncStorageOperations.uploadFileAsync(localPath, bucketName, destinationKey);
+            });
+
+            verify(mockS3AsyncClient, never()).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+        }
+
+        @Test
+        @DisplayName("[FAILURE] uploadFileAsync should throw NullBucketNameException when bucket name is null")
+        public void uploadFile_ShouldThrowNullBucketNameException_WhenBucketNameIsNull() throws Exception {
+            String localPath = "local-path/file.txt";
+            String destinationKey = "path/to/non-existent-folder/";
+
+            assertThrows(NullBucketNameException.class, () -> {
+                asyncStorageOperations.uploadFileAsync(localPath, null, destinationKey);
+            });
+
+            verify(mockS3AsyncClient, never()).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+        }
+
+        @Test
+        @DisplayName("[FAILURE] uploadFileAsync should throw NullLocalPathException when local path is null")
+        public void uploadFile_ShouldThrowNullLocalPathException_WhenLocalPathIsNull() throws Exception {
+            String bucketName = "my-bucket";
+            String destinationKey = "path/to/non-existent-folder/";
+
+            assertThrows(NullLocalPathException.class, () -> {
+                asyncStorageOperations.uploadFileAsync(null, bucketName, destinationKey);
+            });
+
+            verify(mockS3AsyncClient, never()).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+        }
+
+        @Test
+        @DisplayName("[FAILURE] uploadFileAsync should throw NullDestinationKeyException when destination key is null")
+        public void uploadFile_ShouldThrowNullDestinationKeyException_WhenDestinationKeyIsNull() throws Exception {
+            String localPath = "local-path/file.txt";
+            String bucketName = "my-bucket";
+            String destinationKey = null;
+
+            assertThrows(NullDestinationKeyException.class, () -> {
+                asyncStorageOperations.uploadFileAsync(localPath, bucketName, null);
+            });
+
+            verify(mockS3AsyncClient, never()).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+        }
+
+        @Test
+        @DisplayName("[FAILURE] uploadFileAsync should throw InvalidBucketNameException when bucket name is invalid")
+        public void uploadFile_ShouldThrowInvalidBucketNameException_WhenBucketNameIsInvalid() throws Exception {
+            String localPath = "local-path/";
+            String bucketName = "InvalidBucketName";
+            String destinationKey = "path/to/non-existent-folder/";
+
+            assertThrows(InvalidBucketNameException.class, () -> {
+                asyncStorageOperations.uploadFileAsync(localPath, bucketName, destinationKey);
+            });
+
+            verifyNoInteractions(mockS3Client);
+        }
+
+        @Test
+        @DisplayName("[FAILURE] uploadFileAsync should fail with StorageException when unknown error")
+        void uploadFileAsync_ShouldFailWithStorageException_WhenUnknownError(@TempDir Path tempDir) throws Exception {
+            String bucketName = "my-valid-bucket";
+            String destinationKey = "destination/path/key.txt";
+
+            Path tempFilePath = tempDir.resolve("upload.txt");
+            Files.write(tempFilePath, "Test content".getBytes());
+            String localPath = tempFilePath.toString();
+
+            AsyncRequestBody requestBody = mock(AsyncRequestBody.class);
+            when(s3AsyncFileTransfer.uploadFromFile(any()))
+                    .thenReturn(requestBody);
+
+            RuntimeException unknownError = new RuntimeException("Simulated network failure");
+            CompletableFuture<PutObjectResponse> failedFuture = new CompletableFuture<>();
+            failedFuture.completeExceptionally(unknownError);
+
+            when(mockS3AsyncClient.putObject(any(PutObjectRequest.class), eq(requestBody)))
+                    .thenReturn(failedFuture);
+
+            CompletableFuture<PutObjectResponse> future = asyncStorageOperations.uploadFileAsync(localPath, bucketName, destinationKey);
+
+            ExecutionException ex = assertThrows(ExecutionException.class, future::get);
+
+            Throwable wrapperException = ex.getCause();
+            assertInstanceOf(StorageException.class, wrapperException.getCause(),
+                    "A causa dentro do wrapper deveria ser uma StorageException");
+
+            assertTrue(wrapperException.getCause().getMessage().contains("Simulated network failure"),
+                    "A mensagem da StorageException deve conter o erro original");
+
+            verify(mockS3AsyncClient).putObject(any(PutObjectRequest.class), eq(requestBody));
+        }
+    }
+
+    @Nested
+    class downloadFileAsyncTest {
+
+        @Test
+        @DisplayName("[SUCCESS] downloadFileAsync should successfully download a file")
+        void downloadFileAsync_ShouldSuccessfullyDownloadFile(@TempDir File tempDir) throws Exception {
+            String bucketName = "my-bucket";
+            String destinationKey = "destination/path/file.txt";
+
+            Path tempFilePath = tempDir.toPath().resolve("test-download.txt");
+            Files.write(tempFilePath, "File content".getBytes());
+
+            String localPath = tempFilePath.toAbsolutePath().toString();
+
+            AsyncResponseTransformer<GetObjectResponse, Path> responseTransformer =
+                    mock(AsyncResponseTransformer.class);
+
+            when(s3AsyncFileTransfer.downloadToFile(any(Path.class)))
+                    .thenReturn(responseTransformer);
+
+            when(mockS3AsyncClient.getObject(
+                    any(GetObjectRequest.class),
+                    eq(responseTransformer)
+            )).thenAnswer(invocation ->
+                    CompletableFuture.completedFuture(tempFilePath)
+            );
+
+            CompletableFuture<Path> future = asyncStorageOperations.downloadFileAsync(
+                            bucketName, destinationKey, localPath
+            );
+
+            Path result = future.join();
+
+            assertEquals(tempFilePath, result);
+
+            ArgumentCaptor<GetObjectRequest> requestCaptor =
+                    ArgumentCaptor.forClass(GetObjectRequest.class);
+
+            verify(mockS3AsyncClient)
+                    .getObject(requestCaptor.capture(), eq(responseTransformer));
+
+            GetObjectRequest request = requestCaptor.getValue();
+
+            assertEquals(bucketName, request.bucket());
+            assertEquals(destinationKey, request.key());
+
+            verifyNoMoreInteractions(mockS3AsyncClient);
+        }
+
+        @Test
+        @DisplayName("[FAILURE] downloadFileAsync should throw FileDoesNotExistsException when file does not exists")
+        void downloadFileAsync_ShouldThrowFileDoesNotExistsException_WhenFileDoesNotExists() throws Exception {
+            String bucketName = "my-bucket";
+            String sourceKey = "path/download.txt";
+            String localDestinationPath = "download-file.txt";
+
+            AsyncResponseTransformer<GetObjectResponse, Path> mockTransformer = mock(AsyncResponseTransformer.class);
+            when(s3AsyncFileTransfer.downloadToFile(any(Path.class))).thenReturn(mockTransformer);
+
+            CompletableFuture<Path> failedFuture = new CompletableFuture<>();
+            failedFuture.completeExceptionally(NoSuchKeyException.builder()
+                    .message("Not Found")
+                    .build());
+
+            when(mockS3AsyncClient.getObject(any(GetObjectRequest.class), eq(mockTransformer)))
+                    .thenReturn(failedFuture);
+
+            CompletableFuture<Path> resultFuture = asyncStorageOperations.downloadFileAsync(bucketName, sourceKey, localDestinationPath);
+
+            CompletionException ex = assertThrows(CompletionException.class, resultFuture::join);
+            assertInstanceOf(FileDoesNotExistsException.class, ex.getCause());
+
+            verify(mockS3AsyncClient).getObject(any(GetObjectRequest.class), eq(mockTransformer));
+        }
+
+        @Test
+        @DisplayName("[FAILURE] downloadFileAsync should throw BucketDoesNotExistsException when bucket does not exists")
+        void downloadFileAsync_ShouldThrowBucketDoesNotExistsException_WhenBucketDoesNotExists() throws Exception {
+            String bucketName = "non-existent-bucket";
+            String sourceKey = "path/download.txt";
+            String localDestinationPath = "download-file.txt";
+
+            AsyncResponseTransformer<GetObjectResponse, Path> mockTransformer = mock(AsyncResponseTransformer.class);
+            when(s3AsyncFileTransfer.downloadToFile(any(Path.class))).thenReturn(mockTransformer);
+
+            CompletableFuture<Path> failedFuture = new CompletableFuture<>();
+            failedFuture.completeExceptionally(NoSuchBucketException.builder()
+                    .message("The specified bucket does not exist")
+                    .build());
+
+            when(mockS3AsyncClient.getObject(any(GetObjectRequest.class), eq(mockTransformer)))
+                    .thenReturn(failedFuture);
+
+            CompletableFuture<Path> resultFuture = asyncStorageOperations.downloadFileAsync(bucketName, sourceKey, localDestinationPath);
+
+            CompletionException ex = assertThrows(CompletionException.class, resultFuture::join);
+            assertInstanceOf(BucketDoesNotExistsException.class, ex.getCause());
+
+            verify(mockS3AsyncClient).getObject(any(GetObjectRequest.class), eq(mockTransformer));
+        }
+
+        @Test
+        @DisplayName("[FAILURE] downloadFileAsync should throw EmptyBucketNameException when bucket name is empty")
+        void downloadFileAsync_ShouldThrowEmptyBucketNameException_WhenBucketNameIsEmpty() {
+            String emptyBucketName = "";
+            String sourceKey = "path/download.txt";
+            String localDestinationPath = "download-file.txt";
+
+            clearInvocations(s3AsyncFileTransfer);
+
+            assertThrows(EmptyBucketNameException.class, () -> {
+                asyncStorageOperations.downloadFileAsync(emptyBucketName, sourceKey, localDestinationPath);
+            });
+
+            verifyNoInteractions(mockS3AsyncClient);
+            verifyNoMoreInteractions(s3AsyncFileTransfer);
+        }
+
+        @Test
+        @DisplayName("[FAILURE] downloadFileAsync should throw EmptySourceKeyException when source key is empty")
+        void downloadFileAsync_ShouldThrowEmptySourceKeyException_WhenSourceKeyIsEmpty() {
+            String bucketName = "my-bucket";
+            String emptySourceKey = "";
+            String localDestinationPath = "download-file.txt";
+
+            clearInvocations(s3AsyncFileTransfer);
+
+            assertThrows(EmptySourceKeyException.class, () -> {
+                asyncStorageOperations.downloadFileAsync(bucketName, emptySourceKey, localDestinationPath);
+            });
+
+            verifyNoInteractions(mockS3AsyncClient);
+            verifyNoMoreInteractions(s3AsyncFileTransfer);
+        }
+
+        @Test
+        @DisplayName("[FAILURE] downloadFileAsync should throw EmptyLocalPathException when local path is empty")
+        void downloadFileAsync_ShouldThrowEmptyLocalPathException_WhenLocalPathIsEmpty() {
+            String bucketName = "my-bucket";
+            String sourceKey = "path/download.txt";
+            String emptyLocalPath = "";
+
+            clearInvocations(s3AsyncFileTransfer);
+
+            assertThrows(EmptyDestinationLocalPathException.class, () -> {
+                asyncStorageOperations.downloadFileAsync(bucketName, sourceKey, emptyLocalPath);
+            });
+
+            verifyNoInteractions(mockS3AsyncClient);
+            verifyNoMoreInteractions(s3AsyncFileTransfer);
+        }
+
+        @Test
+        @DisplayName("[FAILURE] downloadFileAsync should throw NullBucketNameException when bucket name is null")
+        void downloadFileAsync_ShouldThrowNullBucketNameException_WhenBucketNameIsNull() {
+            String nullBucketName = null;
+            String sourceKey = "path/download.txt";
+            String localDestinationPath = "download-file.txt";
+
+            clearInvocations(s3AsyncFileTransfer);
+
+            assertThrows(NullBucketNameException.class, () -> {
+                asyncStorageOperations.downloadFileAsync(nullBucketName, sourceKey, localDestinationPath);
+            });
+
+            verifyNoInteractions(mockS3AsyncClient);
+            verifyNoMoreInteractions(s3AsyncFileTransfer);
+        }
+
+        @Test
+        @DisplayName("[FAILURE] downloadFileAsync should throw NullLocalDestinationPathException when local destination path is null")
+        void downloadFileAsync_ShouldThrowNullLocalDestinationPathException_WhenLocalDestinationPathIsNull() {
+            String bucketName = "my-bucket";
+            String sourceKey = "path/download.txt";
+            String nullLocalPath = null;
+
+            clearInvocations(s3AsyncFileTransfer);
+
+            assertThrows(NullDestinationLocalPathException.class, () -> {
+                asyncStorageOperations.downloadFileAsync(bucketName, sourceKey, nullLocalPath);
+            });
+
+            verifyNoInteractions(mockS3AsyncClient);
+            verifyNoMoreInteractions(s3AsyncFileTransfer);
+        }
+
+        @Test
+        @DisplayName("[FAILURE] downloadFileAsync should throw NullSourceKeyException when source key is null")
+        void downloadFileAsync_ShouldThrowNullSourceKeyException_WhenSourceKeyIsNull() {
+            String bucketName = "my-bucket";
+            String nullSourceKey = null;
+            String localDestinationPath = "download-file.txt";
+
+            clearInvocations(s3AsyncFileTransfer);
+
+            assertThrows(NullSourceKeyException.class, () -> {
+                asyncStorageOperations.downloadFileAsync(bucketName, nullSourceKey, localDestinationPath);
+            });
+
+            verifyNoInteractions(mockS3AsyncClient);
+            verifyNoMoreInteractions(s3AsyncFileTransfer);
+        }
+
+        @Test
+        @DisplayName("[FAILURE] downloadFileAsync should throw InvalidBucketNameException when bucket name is invalid")
+        void downloadFileAsync_ShouldThrowInvalidBucketNameException_WhenBucketNameIsInvalid() {
+            String invalidBucketName = "Invalid_Bucket_Name";
+            String sourceKey = "path/download.txt";
+            String localDestinationPath = "download-file.txt";
+
+            clearInvocations(s3AsyncFileTransfer);
+
+            assertThrows(InvalidBucketNameException.class, () -> {
+                asyncStorageOperations.downloadFileAsync(invalidBucketName, sourceKey, localDestinationPath);
+            });
+
+            verifyNoInteractions(mockS3AsyncClient);
+            verifyNoMoreInteractions(s3AsyncFileTransfer);
+        }
+
+        @Test
+        @DisplayName("[FAILURE] downloadFileAsync should throw StorageException when unknown error")
+        void downloadFileAsync_ShouldThrowStorageException_WhenUnknownError() {
+            String bucketName = "my-bucket";
+            String sourceKey = "path/download.txt";
+            String localDestinationPath = "download-file.txt";
+
+            AsyncResponseTransformer<GetObjectResponse, Path> mockTransformer = mock(AsyncResponseTransformer.class);
+            when(s3AsyncFileTransfer.downloadToFile(any(Path.class))).thenReturn(mockTransformer);
+
+            RuntimeException unknownError = new RuntimeException("Unexpected system failure");
+            CompletableFuture<Path> failedFuture = new CompletableFuture<>();
+            failedFuture.completeExceptionally(unknownError);
+
+            when(mockS3AsyncClient.getObject(any(GetObjectRequest.class), eq(mockTransformer)))
+                    .thenReturn(failedFuture);
+
+            CompletableFuture<Path> resultFuture = asyncStorageOperations.downloadFileAsync(bucketName, sourceKey, localDestinationPath);
+
+            CompletionException ex = assertThrows(CompletionException.class, resultFuture::join);
+
+            Throwable cause = ex.getCause();
+            assertInstanceOf(StorageException.class, cause.getCause());
+
+            verify(mockS3AsyncClient).getObject(any(GetObjectRequest.class), eq(mockTransformer));
+        }
+    }
 
     @Nested
     class downloadFileTest {
