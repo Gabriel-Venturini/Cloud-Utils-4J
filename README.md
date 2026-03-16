@@ -1,6 +1,6 @@
-# CloudUtils4J - Abstraction Layer for Cloud Storage (Alpha)
+# S3-Toolkit-Lab - Abstraction Layer for Cloud Storage (Prototype)
 
-<p>CloudUtils4J is a lightweight Java utility library (Java 8 compatible) designed to simplify, standardize, and abstract cloud storage operations, initially focusing on AWS S3 and S3-compatible services like MinIO.</p>
+<p>S3-Toolkit-Lab is a lightweight Java utility library (Java 8 compatible) designed to simplify, standardize, and abstract cloud storage operations, initially focusing on AWS S3 and S3-compatible services like MinIO.</p>
 
 ## Architectural Value Proposition
 
